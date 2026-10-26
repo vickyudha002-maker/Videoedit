@@ -19,14 +19,20 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
@@ -48,6 +54,22 @@ class Clip(val uri: Uri, val durMs: Long) {
     var end by mutableStateOf(durMs.toFloat())
 }
 
+private val PANEL = Color(0xFF2A2D33)
+
+@Composable
+private fun Tool(label: String, color: Color = PANEL, onClick: () -> Unit) {
+    Box(Modifier.size(46.dp).background(color, RoundedCornerShape(6.dp)).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center) { Text(label, color = Color.White, fontSize = 12.sp) }
+}
+
+@Composable
+private fun Item(sym: String, label: String, modifier: Modifier, onClick: () -> Unit) {
+    Column(modifier.clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(sym, fontSize = 18.sp, color = Color.White)
+        Text(label, fontSize = 10.sp, color = Color.White)
+    }
+}
+
 @UnstableApi
 class MainActivity : ComponentActivity() {
     override fun onCreate(b: Bundle?) {
@@ -59,13 +81,13 @@ class MainActivity : ComponentActivity() {
         }
         if (log.exists()) {
             val t = android.widget.TextView(this).apply {
-                text = log.readText(); setTextIsSelectable(true); setPadding(24, 120, 24, 24)
+                text = log.readText(); setTextIsSelectable(true); setPadding(24, 60, 24, 24)
             }
             setContentView(android.widget.ScrollView(this).apply { addView(t) })
             log.delete()
             return
         }
-        setContent { MaterialTheme { Editor() } }
+        setContent { MaterialTheme(colorScheme = darkColorScheme()) { Editor() } }
     }
 
     private fun dur(u: Uri): Long {
@@ -80,16 +102,19 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun Editor() {
         val clips = remember { mutableStateListOf<Clip>() }
+        var sel by remember { mutableStateOf(-1) }
         var height by remember { mutableStateOf(1080) }
-        var status by remember { mutableStateOf("Add clips to begin") }
+        var status by remember { mutableStateOf("") }
         var title by remember { mutableStateOf("") }
+        var showTitle by remember { mutableStateOf(false) }
         var image by remember { mutableStateOf<Bitmap?>(null) }
         var music by remember { mutableStateOf<Pair<Uri, Long>?>(null) }
         var preview by remember { mutableStateOf<Uri?>(null) }
+        var vv by remember { mutableStateOf<VideoView?>(null) }
         val pickVideo = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
             uris.forEach { u ->
                 val d = dur(u)
-                if (d > 0) { clips.add(Clip(u, d)); if (preview == null) preview = u }
+                if (d > 0) { clips.add(Clip(u, d)); if (sel < 0) { sel = 0; preview = u } }
             }
         }
         val pickAudio = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { u ->
@@ -98,57 +123,89 @@ class MainActivity : ComponentActivity() {
         val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { u ->
             if (u != null) image = contentResolver.openInputStream(u)?.use { BitmapFactory.decodeStream(it) }
         }
-        Column(Modifier.systemBarsPadding().padding(16.dp).verticalScroll(rememberScrollState())) {
-            AndroidView(
-                factory = { VideoView(it) },
-                update = { v -> preview?.let { if (v.tag != it) { v.tag = it; v.setVideoURI(it); v.start() } } },
-                modifier = Modifier.fillMaxWidth().height(200.dp)
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { pickVideo.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) }) { Text("+ Video") }
-                Button(onClick = { pickAudio.launch("audio/*") }) { Text("+ Audio") }
-                Button(onClick = { pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Text("+ Image") }
-            }
-            Text("Timeline (video clips merge in this order)")
-            Row(Modifier.fillMaxWidth().height(36.dp)) {
-                clips.forEachIndexed { i, c ->
-                    Box(Modifier.weight(max(c.end - c.start, 1f)).fillMaxHeight()
-                        .background(if (i % 2 == 0) Color(0xFF6C3CE9) else Color(0xFF3C8CE9))) { Text("V${i + 1}", color = Color.White) }
+        val totalMs = clips.sumOf { (it.end - it.start).toLong() }
+        Row(Modifier.fillMaxSize().background(Color(0xFF14161A)).systemBarsPadding().padding(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.width(46.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Tool("Export", Color(0xFFE5483F)) {
+                    if (clips.isNotEmpty()) { status = "Exporting..."; export(clips.toList(), height, title.trim(), image, music) { status = it } }
                 }
+                Tool(if (height == 2160) "4K" else "${height}p") { height = when (height) { 720 -> 1080; 1080 -> 2160; else -> 720 } }
+                Tool("Del") {
+                    if (sel in clips.indices) { clips.removeAt(sel); sel = if (clips.isEmpty()) -1 else minOf(sel, clips.lastIndex) }
+                }
+                Tool("◀") { if (sel > 0) { clips.add(sel - 1, clips.removeAt(sel)); sel-- } }
+                Tool("▶") { if (sel in 0 until clips.lastIndex) { clips.add(sel + 1, clips.removeAt(sel)); sel++ } }
             }
-            Spacer(Modifier.height(4.dp))
-            val total = clips.sumOf { (it.end - it.start).toLong() }.coerceAtLeast(1)
-            music?.let { m ->
-                Box(Modifier.fillMaxWidth((m.second.toFloat() / total).coerceIn(0.05f, 1f)).height(28.dp)
-                    .background(Color(0xFF2E9E6B))) { Text("Music", color = Color.White) }
-                TextButton(onClick = { music = null }) { Text("Remove music") }
-            }
-            if (image != null) TextButton(onClick = { image = null }) { Text("Remove image overlay") }
-            clips.forEachIndexed { i, c ->
-                Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text("Clip ${i + 1}: ${((c.end - c.start) / 1000).toInt()}s kept of ${c.durMs / 1000}s")
-                        RangeSlider(value = c.start..c.end, onValueChange = { c.start = it.start; c.end = it.endInclusive }, valueRange = 0f..c.durMs.toFloat())
-                        Row {
-                            TextButton(onClick = { preview = c.uri }) { Text("Preview") }
-                            if (i > 0) TextButton(onClick = { clips.add(i - 1, clips.removeAt(i)) }) { Text("Move up") }
-                            TextButton(onClick = { clips.remove(c) }) { Text("Remove") }
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(Modifier.weight(1f).fillMaxHeight().background(Color.Black), contentAlignment = Alignment.Center) {
+                        AndroidView(
+                            factory = { ctx -> VideoView(ctx).also { vv = it } },
+                            update = { v -> preview?.let { if (v.tag != it) { v.tag = it; v.setVideoURI(it); v.start() } } },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        if (status.isNotEmpty()) Text(status, color = Color.White, fontSize = 12.sp,
+                            modifier = Modifier.align(Alignment.BottomStart).background(Color(0x88000000)).padding(4.dp))
+                    }
+                    Box(Modifier.width(150.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(140.dp).background(PANEL, CircleShape)) {
+                            Item("🎞️", "Media", Modifier.align(Alignment.TopCenter).padding(top = 8.dp)) {
+                                pickVideo.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                            }
+                            Item("🖼️", "Layer", Modifier.align(Alignment.CenterStart).padding(start = 8.dp)) {
+                                pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }
+                            Item("🎵", "Audio", Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)) { pickAudio.launch("audio/*") }
+                            Item("T", "Text", Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)) { showTitle = true }
+                            Box(Modifier.align(Alignment.Center).size(44.dp).background(Color(0xFFE5483F), CircleShape)
+                                .clickable { vv?.let { if (it.isPlaying) it.pause() else it.start() } },
+                                contentAlignment = Alignment.Center) { Text("▶", color = Color.White, fontSize = 18.sp) }
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (sel in clips.indices) {
+                        val c = clips[sel]
+                        Text("V${sel + 1}", color = Color.White, fontSize = 12.sp)
+                        RangeSlider(value = c.start..c.end, onValueChange = { c.start = it.start; c.end = it.endInclusive },
+                            valueRange = 0f..c.durMs.toFloat(), modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+                        Text("${totalMs / 1000}s total", color = Color.White, fontSize = 12.sp)
+                    } else Text("Tap Media to add video clips", color = Color.White, fontSize = 12.sp)
+                }
+                Column(Modifier.fillMaxWidth().height(116.dp).background(PANEL, RoundedCornerShape(6.dp))
+                    .horizontalScroll(rememberScrollState()).padding(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.height(44.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        clips.forEachIndexed { i, c ->
+                            Box(Modifier.width(max((c.end - c.start) / 1000f * 12f, 28f).dp).fillMaxHeight()
+                                .background(if (i % 2 == 0) Color(0xFF6C3CE9) else Color(0xFF3C8CE9), RoundedCornerShape(4.dp))
+                                .border(2.dp, if (i == sel) Color.White else Color.Transparent, RoundedCornerShape(4.dp))
+                                .clickable { sel = i; preview = c.uri }) { Text("V${i + 1}", color = Color.White, fontSize = 11.sp, modifier = Modifier.padding(3.dp)) }
+                        }
+                    }
+                    Row(Modifier.height(28.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        if (image != null) Box(Modifier.width(70.dp).fillMaxHeight().background(Color(0xFFE5883C), RoundedCornerShape(4.dp))
+                            .clickable { image = null }) { Text("Image ✕", color = Color.White, fontSize = 11.sp, modifier = Modifier.padding(3.dp)) }
+                        if (title.isNotEmpty()) Box(Modifier.width(90.dp).fillMaxHeight().background(Color(0xFFE5B72E), RoundedCornerShape(4.dp))
+                            .clickable { title = "" }) { Text("T $title", color = Color.Black, fontSize = 11.sp, maxLines = 1, modifier = Modifier.padding(3.dp)) }
+                    }
+                    Row(Modifier.height(28.dp)) {
+                        music?.let { m ->
+                            Box(Modifier.width(max(minOf(m.second, totalMs) / 1000f * 12f, 40f).dp).fillMaxHeight()
+                                .background(Color(0xFF2E9E6B), RoundedCornerShape(4.dp)).clickable { music = null }) {
+                                Text("Music ✕", color = Color.White, fontSize = 11.sp, modifier = Modifier.padding(3.dp))
+                            }
                         }
                     }
                 }
             }
-            OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title text (optional)") }, modifier = Modifier.fillMaxWidth())
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(720 to "720p", 1080 to "1080p", 2160 to "4K").forEach { (h, l) ->
-                    FilterChip(selected = height == h, onClick = { height = h }, label = { Text(l) })
-                }
-            }
-            Button(enabled = clips.isNotEmpty(), onClick = {
-                status = "Exporting..."
-                export(clips.toList(), height, title.trim(), image, music) { status = it }
-            }) { Text("Export") }
-            Text(status)
         }
+        if (showTitle) AlertDialog(
+            onDismissRequest = { showTitle = false },
+            confirmButton = { TextButton(onClick = { showTitle = false }) { Text("OK") } },
+            title = { Text("Title text") },
+            text = { OutlinedTextField(value = title, onValueChange = { title = it }, singleLine = true) }
+        )
     }
 
     private fun export(clips: List<Clip>, h: Int, title: String, img: Bitmap?, music: Pair<Uri, Long>?, say: (String) -> Unit) {
