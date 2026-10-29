@@ -572,7 +572,7 @@ class MainActivity : ComponentActivity() {
                 EditedMediaItem.Builder(mi).setRemoveVideo(true).build()
             }))
         }
-        val comp = Composition.Builder(*seqs.toTypedArray()).build()
+        val comp = Composition.Builder(seqs[0], *seqs.drop(1).toTypedArray()).build()
         val safe = name.trim().ifEmpty { "video" }.replace(Regex("[^A-Za-z0-9 _-]"), "_")
         val out = File(cacheDir, "out.mp4").also { it.delete() }
         Transformer.Builder(this).addListener(object : Transformer.Listener {
