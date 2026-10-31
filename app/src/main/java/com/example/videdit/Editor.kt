@@ -200,7 +200,7 @@ private fun LayerBox(c: Clip, wPx: Float, hPx: Float, dens: Float, selected: Boo
                 c.ly = (c.ly - d.y / hPx * 2f).coerceIn(-1f, 1f)
             }
         }) {
-        if (bm != null) Image(bm, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
+        if (bm != null) Image(bm, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
     }
 }
 
