@@ -12,7 +12,7 @@ import android.text.Spanned
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
-import android.util.Size
+import androidx.media3.common.util.Size
 import androidx.activity.ComponentActivity
 import androidx.media3.common.C
 import androidx.media3.common.Effect
