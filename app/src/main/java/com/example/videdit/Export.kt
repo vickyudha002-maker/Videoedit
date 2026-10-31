@@ -33,6 +33,7 @@ import androidx.media3.effect.RgbFilter
 import androidx.media3.effect.SpeedChangeEffect
 import androidx.media3.effect.TextOverlay
 import androidx.media3.effect.TextureOverlay
+import androidx.media3.effect.VideoCompositorSettings
 import androidx.media3.transformer.*
 import androidx.media3.transformer.Composition
 import com.google.common.collect.ImmutableList
