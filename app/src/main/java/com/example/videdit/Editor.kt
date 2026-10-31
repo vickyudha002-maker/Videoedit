@@ -190,7 +190,7 @@ private fun ToolPanel(c: Clip, tool: String, onDone: () -> Unit) {
 private fun LayerBox(c: Clip, wPx: Float, hPx: Float, dens: Float, selected: Boolean) {
     val bm = c.m.thumbs.firstOrNull()
     val wDp = (wPx * c.ls / dens).dp
-    val ar = if (bm != null) bm.width.toFloat() / bm.height else 16f / 9f
+    val ar = wPx / hPx
     val hDp = wDp / ar
     Box(Modifier.offset(x = ((wPx * (c.lx + 1f) / 2f) / dens).dp - wDp / 2, y = ((hPx * (1f - c.ly) / 2f) / dens).dp - hDp / 2)
         .size(wDp, hDp).border(if (selected) 2.dp else 1.dp, if (selected) ORANGE else Color.White)
